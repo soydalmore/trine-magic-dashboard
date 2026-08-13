@@ -234,6 +234,7 @@ td{padding:10px;border-bottom:1px solid var(--line)}
     <button class="tab active" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="input">Penjualan</button>
     <button class="tab" data-tab="payout">Pencairan</button>
+    <button class="tab" data-tab="cash">Kas Trine Magic</button>
   </div>
 
   <section id="dashboard" class="section active">
@@ -399,20 +400,29 @@ td{padding:10px;border-bottom:1px solid var(--line)}
       <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Nama</th><th>Nominal</th><th>Catatan</th></tr></thead><tbody id="payout-table"></tbody></table></div>
     </div>
 
+>
+  </section>
+
+
+
+  <section id="cash" class="section">
     <div class="card">
-      <div class="card-title">🏦 Kas Bisnis</div>
-      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+      <div class="card-title">🏦 Kas Trine Magic</div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-bottom:14px">
         <div class="kpi"><div class="kpi-label">Kas Terkumpul (5% Omzet)</div><div class="kpi-value" id="cash-earned">Rp0</div></div>
         <div class="kpi"><div class="kpi-label">Pemasukan Kas Bisnis</div><div class="kpi-value" id="cash-injected-total">Rp0</div></div>
         <div class="kpi"><div class="kpi-label">Total Kas Bisnis</div><div class="kpi-value" id="cash-total">Rp0</div></div>
+        <div class="kpi"><div class="kpi-label">Total Kas Terpakai</div><div class="kpi-value" id="cash-spent">Rp0</div></div>
         <div class="kpi green"><div class="kpi-label">Sisa Kas</div><div class="kpi-value" id="cash-balance">Rp0</div></div>
       </div>
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Komponen Kas</th><th>Nominal</th></tr></thead><tbody id="cash-summary-table"></tbody></table></div>
-      <div class="page-sub" style="margin-bottom:14px">Total Kas Bisnis = kas 5% dari omzet + pemasukan kas eksternal. Pengeluaran kas mengurangi total tersebut.</div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Rekap Penggunaan Kas</th><th>Nominal</th></tr></thead><tbody><tr><td>Total Kas Terpakai</td><td><strong id="cash-spent-summary">Rp0</strong></td></tr></tbody></table></div>
+      <div class="page-sub" style="margin-bottom:14px">Total Kas Bisnis = kas 5% dari omzet + pemasukan kas eksternal. Total Kas Terpakai adalah seluruh pengeluaran kas yang tercatat. Sisa Kas = Total Kas Bisnis − Total Kas Terpakai.</div>
       <form id="cash-expense-form" class="form-grid">
         <div class="form-group"><label class="label">Tanggal</label><input id="cash-expense-date" class="input" type="date" required></div>
         <div class="form-group"><label class="label">Nominal</label><input id="cash-expense-amount" class="input" type="number" min="1" step="1" required></div>
         <div class="full form-group"><label class="label">Keterangan Pengeluaran</label><input id="cash-expense-note" class="input" type="text" placeholder="Contoh: iklan Instagram" required></div>
+        <div class="full page-sub" id="cash-expense-available" style="margin-top:-4px">Saldo kas tersedia: Rp0</div>
         <div class="full actions"><button class="btn btn-pink" type="submit">Catat Pengeluaran Kas</button></div>
       </form>
       <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Tanggal</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody id="cash-expense-table"></tbody></table></div>
@@ -428,9 +438,8 @@ td{padding:10px;border-bottom:1px solid var(--line)}
         <div class="full actions"><button class="btn btn-green" type="submit">Tambah Pemasukan Kas</button></div>
       </form>
       <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Tanggal</th><th>Sumber</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody id="cash-injection-table"></tbody></table></div>
-    </div>
+    </div
   </section>
-
 
 </main>
 </div>
@@ -984,11 +993,17 @@ function renderCashExpenses(){
   document.getElementById("cash-injected-total").textContent=rupiah(financialSnapshot.cashInjected);
   const totalCash=financialSnapshot.cashEarned+financialSnapshot.cashInjected;
   document.getElementById("cash-total").textContent=rupiah(totalCash);
-  document.getElementById("cash-spent").textContent=rupiah(financialSnapshot.cashSpent);
-  document.getElementById("cash-summary-table").innerHTML=`<tr><td>Kas dari omzet (5%)</td><td><strong>${rupiah(financialSnapshot.cashEarned)}</strong></td></tr><tr><td>Pemasukan kas bisnis</td><td><strong>${rupiah(financialSnapshot.cashInjected)}</strong></td></tr><tr><td><strong>Total Kas Bisnis</strong></td><td><strong>${rupiah(totalCash)}</strong></td></tr><tr><td>Pengeluaran Kas</td><td><strong>${rupiah(financialSnapshot.cashSpent)}</strong></td></tr><tr><td><strong>Sisa Kas</strong></td><td><strong>${rupiah(financialSnapshot.cashBalance)}</strong></td></tr>`;
+  const cashSpentValue=rupiah(financialSnapshot.cashSpent);
+  document.getElementById("cash-spent").textContent=cashSpentValue;
+  document.getElementById("cash-spent-summary").textContent=cashSpentValue;
+  document.getElementById("cash-summary-table").innerHTML=`<tr><td>Kas dari omzet (5%)</td><td><strong>${rupiah(financialSnapshot.cashEarned)}</strong></td></tr><tr><td>Pemasukan kas bisnis</td><td><strong>${rupiah(financialSnapshot.cashInjected)}</strong></td></tr><tr><td><strong>Total Kas Bisnis</strong></td><td><strong>${rupiah(totalCash)}</strong></td></tr><tr><td><strong>Total Kas Terpakai</strong></td><td><strong>${cashSpentValue}</strong></td></tr><tr><td><strong>Sisa Kas</strong></td><td><strong>${rupiah(financialSnapshot.cashBalance)}</strong></td></tr>`;
   const cashBalanceEl=document.getElementById("cash-balance");
   cashBalanceEl.textContent=rupiah(financialSnapshot.cashBalance);
   cashBalanceEl.style.color=financialSnapshot.cashBalance<0 ? "#c62828" : "";
+  const expenseAvailableEl=document.getElementById("cash-expense-available");
+  if(expenseAvailableEl){
+    expenseAvailableEl.textContent=`Saldo kas tersedia untuk pengeluaran: ${rupiah(Math.max(0,financialSnapshot.cashBalance))}`;
+  }
   document.getElementById("cash-expense-table").innerHTML=cashExpenses.length ? cashExpenses.map(e=>`<tr><td>${escapeHtml(e.expense_date||"-")}</td><td>${escapeHtml(e.description||"-")}</td><td><strong>${rupiah(e.amount)}</strong></td></tr>`).join("") : `<tr><td colspan="3" class="empty">Belum ada pengeluaran kas pada periode ini.</td></tr>`;
   document.getElementById("cash-injection-table").innerHTML=cashInjections.length ? cashInjections.map(e=>`<tr><td>${escapeHtml(e.injection_date||"-")}</td><td>${escapeHtml(e.source||"-")}</td><td>${escapeHtml(e.description||"-")}</td><td><strong>${rupiah(e.amount)}</strong></td></tr>`).join("") : `<tr><td colspan="4" class="empty">Belum ada pemasukan kas dari luar pendapatan pada periode ini.</td></tr>`;
 }
@@ -1175,7 +1190,7 @@ document.getElementById("cash-expense-form").addEventListener("submit",async e=>
       throw new Error(`Saldo kas tersedia saat ini ${rupiah(cashAvailable)}. Pengeluaran kas tidak dapat dicatat sebelum kas tersedia kembali.`);
     }
     if(amount > cashAvailable + 0.005){
-      throw new Error(`Pengeluaran melebihi saldo kas tersedia ${rupiah(cashAvailable)}. Maksimal yang dapat dicatat: ${rupiah(cashAvailable)}.`);
+      throw new Error(`Pengeluaran melebihi saldo kas tersedia ${rupiah(cashAvailable)}. Maksimal pengeluaran saat ini: ${rupiah(cashAvailable)}.`);
     }
 
     const {error}=await db.from("cash_expenses").insert([{expense_date:expenseDate,amount,description}]);
