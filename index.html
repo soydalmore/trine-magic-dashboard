@@ -138,6 +138,8 @@ td{padding:10px;border-bottom:1px solid var(--line)}
   .full{grid-column:auto}
   .chart-wrap{height:240px}
 }
+
+.master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:calc(100% - 28px);max-height:85vh;overflow:auto;margin:7vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
 </style>
 </head>
 
@@ -208,7 +210,7 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 
   <div class="tabs">
     <button class="tab active" data-tab="dashboard">Dashboard</button>
-    <button class="tab" data-tab="input">Input Penjualan</button>
+    <button class="tab" data-tab="input">Penjualan</button>
     <button class="tab" data-tab="payout">Pencairan</button>
     <button class="tab" data-tab="history">Riwayat</button>
   </div>
@@ -261,33 +263,43 @@ td{padding:10px;border-bottom:1px solid var(--line)}
             <input id="tx-date" class="input" type="date" required>
           </div>
           <div class="form-group">
+            <label class="label">Nama Customer</label>
+            <input id="tx-customer" class="input" type="text" placeholder="Nama customer" required>
+          </div>
+          <div class="form-group">
+            <label class="label">Platform Media Sosial</label>
+            <select id="tx-platform" class="input" required>
+              <option value="">-- Pilih Platform --</option>
+              <option value="X">X</option>
+              <option value="Instagram">Instagram</option>
+              <option value="Threads">Threads</option>
+              <option value="TikTok">TikTok</option>
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="Other">Lainnya</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="label">Metode Pembayaran</label>
-            <select id="tx-payment" class="input">
+            <select id="tx-payment" class="input" required>
               <option value="QRIS">QRIS</option>
               <option value="CASH">Cash</option>
               <option value="TRANSFER">Transfer</option>
               <option value="OTHER">Other</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="label">Jenis Paket</label>
-            <select id="tx-package" class="input" required onchange="calculateTotal()">
-              <option value="">Memuat paket...</option>
-            </select>
+          <div class="full">
+            <label class="label">Package & Qty</label>
+            <div id="tx-packages" class="master-list"></div>
           </div>
-          <div class="form-group">
-            <label class="label">Topik</label>
-            <select id="tx-topic" class="input" required>
-              <option value="">Memuat topik...</option>
-            </select>
+          <div class="full">
+            <label class="label">Topik (bisa lebih dari satu)</label>
+            <div id="tx-topics" class="master-list"></div>
           </div>
-          <div class="form-group">
-            <label class="label">Add On (Opsional)</label>
-            <select id="tx-addon" class="input" onchange="calculateTotal()">
-              <option value="">Tanpa Add On</option>
-            </select>
+          <div class="full">
+            <label class="label">Add On & Qty (opsional)</label>
+            <div id="tx-addons" class="master-list"></div>
           </div>
-          <div class="form-group">
+          <div class="full form-group">
             <label class="label">Catatan</label>
             <input id="tx-notes" class="input" type="text" placeholder="Opsional">
           </div>
@@ -303,6 +315,18 @@ td{padding:10px;border-bottom:1px solid var(--line)}
       </form>
     </div>
   </section>
+
+  <div id="receipt-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeReceiptPreview()"></div>
+    <div class="modal-card">
+      <div class="card-title">🧾 Preview Struk Penjualan</div>
+      <div id="receipt-content"></div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn btn-light" type="button" onclick="closeReceiptPreview()">Edit</button>
+        <button class="btn btn-pink" id="confirm-save" type="button">✓ Simpan Transaksi</button>
+      </div>
+    </div>
+  </div>
 
   <section id="payout" class="section">
     <div class="grid-2">
@@ -561,22 +585,32 @@ async function loadMasters(){
 }
 
 function renderMasterOptions(){
-  document.getElementById("tx-package").innerHTML =
-    `<option value="">-- Pilih Paket --</option>` +
-    packages.map(x=>`<option value="${x.id}" data-price="${x.price}" data-code="${x.code}" data-name="${escapeHtml(x.name)}">${x.code} — ${escapeHtml(x.name)} (${rupiah(x.price)})</option>`).join("");
+  document.getElementById("tx-packages").innerHTML = packages.map(x=>`
+    <div class="master-item">
+      <input type="checkbox" class="package-check" data-id="${x.id}" data-code="${escapeHtml(x.code)}" data-name="${escapeHtml(x.name)}" data-price="${x.price}">
+      <div class="master-main"><strong>${escapeHtml(x.code)}</strong> — ${escapeHtml(x.name)}<small>${rupiah(x.price)}</small></div>
+      <input class="input qty-input package-qty" type="number" min="1" step="1" value="1" disabled data-id="${x.id}">
+    </div>`).join("");
 
-  document.getElementById("tx-addon").innerHTML =
-    `<option value="">Tanpa Add On</option>` +
-    addons.map(x=>`<option value="${x.id}" data-price="${x.price}" data-code="${x.code}" data-name="${escapeHtml(x.name)}">${x.code} — ${escapeHtml(x.name)} (${rupiah(x.price)})</option>`).join("");
+  document.getElementById("tx-topics").innerHTML = topics.map(x=>`
+    <label class="master-item"><input type="checkbox" class="topic-check" data-id="${x.id}" data-name="${escapeHtml(x.name)}"> <span class="master-main">${escapeHtml(x.name)}</span></label>`).join("");
 
-  document.getElementById("tx-topic").innerHTML =
-    `<option value="">-- Pilih Topik --</option>` +
-    topics.map(x=>`<option value="${x.id}" data-name="${escapeHtml(x.name)}">${escapeHtml(x.name)}</option>`).join("");
+  document.getElementById("tx-addons").innerHTML = addons.map(x=>`
+    <div class="master-item">
+      <input type="checkbox" class="addon-check" data-id="${x.id}" data-code="${escapeHtml(x.code)}" data-name="${escapeHtml(x.name)}" data-price="${x.price}">
+      <div class="master-main"><strong>${escapeHtml(x.code)}</strong> — ${escapeHtml(x.name)}<small>${rupiah(x.price)}</small></div>
+      <input class="input qty-input addon-qty" type="number" min="1" step="1" value="1" disabled data-id="${x.id}">
+    </div>`).join("");
 
   document.getElementById("payout-partner").innerHTML =
     `<option value="">-- Pilih Partner --</option>` +
-    partners.map(x=>`<option value="${x.id}" data-name="${escapeHtml(x.partner_name)}">${escapeHtml(x.partner_name)} (${Number(x.percentage)*100}%)</option>`).join("");
+    partners.filter(x=>String(x.partner_name).toLowerCase()!=="kas").map(x=>`<option value="${x.id}" data-name="${escapeHtml(x.partner_name)}">${escapeHtml(x.partner_name)}</option>`).join("");
+
+  document.querySelectorAll('.package-check').forEach(c=>c.addEventListener('change',()=>{ const q=document.querySelector(`.package-qty[data-id="${c.dataset.id}"]`); q.disabled=!c.checked; calculateTotal(); }));
+  document.querySelectorAll('.addon-check').forEach(c=>c.addEventListener('change',()=>{ const q=document.querySelector(`.addon-qty[data-id="${c.dataset.id}"]`); q.disabled=!c.checked; calculateTotal(); }));
+  document.querySelectorAll('.package-qty,.addon-qty').forEach(q=>q.addEventListener('input',calculateTotal));
 }
+
 
 /* =========================
    FETCH DATA
@@ -709,12 +743,27 @@ async function refreshAll(){
 /* =========================
    CALCULATIONS
    ========================= */
-function calculateTotal(){
-  const p=document.getElementById("tx-package");
-  const a=document.getElementById("tx-addon");
-  const price=Number(p.options[p.selectedIndex]?.dataset.price||0)+Number(a.options[a.selectedIndex]?.dataset.price||0);
-  document.getElementById("tx-total").textContent=rupiah(price);
+function getSelectedOrder(){
+  const selectedPackages=[...document.querySelectorAll('.package-check:checked')].map(c=>{
+    const q=document.querySelector(`.package-qty[data-id="${c.dataset.id}"]`);
+    const qty=Math.max(1,Number(q?.value||1)); const unit=Number(c.dataset.price||0);
+    return {id:c.dataset.id,code:c.dataset.code,name:c.dataset.name,qty,unit_price:unit,subtotal:unit*qty};
+  });
+  const selectedTopics=[...document.querySelectorAll('.topic-check:checked')].map(c=>({id:c.dataset.id,name:c.dataset.name}));
+  const selectedAddons=[...document.querySelectorAll('.addon-check:checked')].map(c=>{
+    const q=document.querySelector(`.addon-qty[data-id="${c.dataset.id}"]`);
+    const qty=Math.max(1,Number(q?.value||1)); const unit=Number(c.dataset.price||0);
+    return {id:c.dataset.id,code:c.dataset.code,name:c.dataset.name,qty,unit_price:unit,subtotal:unit*qty};
+  });
+  const total=selectedPackages.reduce((s,x)=>s+x.subtotal,0)+selectedAddons.reduce((s,x)=>s+x.subtotal,0);
+  return {packages:selectedPackages,topics:selectedTopics,addons:selectedAddons,total};
 }
+function calculateTotal(){
+  const order=getSelectedOrder();
+  document.getElementById("tx-total").textContent=rupiah(order.total);
+  return order;
+}
+
 
 function renderDashboard(){
   const revenue=transactions.reduce((s,t)=>s+Number(t.total_price||0),0);
@@ -824,50 +873,65 @@ function renderPayouts(){
 /* =========================
    INSERT TRANSACTION
    ========================= */
+let pendingTransactionPayload=null;
+
 document.getElementById("tx-form").addEventListener("submit",async e=>{
   e.preventDefault();
-  const btn=document.getElementById("btn-save");
-  btn.disabled=true; btn.textContent="Menyimpan...";
-
   try{
-    const p=document.getElementById("tx-package");
-    const a=document.getElementById("tx-addon");
-    const t=document.getElementById("tx-topic");
+    const order=calculateTotal();
+    if(!order.packages.length) throw new Error("Pilih minimal 1 package.");
+    if(!order.topics.length) throw new Error("Pilih minimal 1 topik.");
+    const customer=document.getElementById("tx-customer").value.trim();
+    if(!customer) throw new Error("Nama customer wajib diisi.");
 
-    const po=p.options[p.selectedIndex];
-    const ao=a.options[a.selectedIndex];
-    const to=t.options[t.selectedIndex];
-
-    const packagePrice=Number(po?.dataset.price||0);
-    const addonPrice=Number(ao?.dataset.price||0);
-
-    const payload={
+    pendingTransactionPayload={
       transaction_date:document.getElementById("tx-date").value,
-      package_id:p.value,
-      package_code:po?.dataset.code,
-      package_price:packagePrice,
-      topic_id:t.value,
-      topic_name:to?.dataset.name,
-      addon_id:a.value || null,
-      addon_code:ao?.dataset.code || null,
-      addon_price:addonPrice,
-      total_price:packagePrice+addonPrice,
+      customer_name:customer,
+      platform:document.getElementById("tx-platform").value,
+      package_id:order.packages[0]?.id || null,
+      package_code:order.packages.map(x=>x.code).join(", "),
+      package_price:order.packages.reduce((s,x)=>s+x.subtotal,0),
+      package_qty:order.packages.reduce((s,x)=>s+x.qty,0),
+      topic_id:order.topics[0]?.id || null,
+      topic_name:order.topics.map(x=>x.name).join(", "),
+      addon_id:order.addons[0]?.id || null,
+      addon_code:order.addons.map(x=>x.code).join(", ") || null,
+      addon_price:order.addons.reduce((s,x)=>s+x.subtotal,0),
+      addon_qty:order.addons.reduce((s,x)=>s+x.qty,0),
+      order_items:order.packages,
+      order_topics:order.topics,
+      order_addons:order.addons,
+      total_price:order.total,
       payment_method:document.getElementById("tx-payment").value,
-      notes:document.getElementById("tx-notes").value || null
+      notes:document.getElementById("tx-notes").value.trim() || null
     };
+    showReceiptPreview(pendingTransactionPayload);
+  }catch(err){ showToast(err.message,true); }
+});
 
-    const {error}=await db.from("transactions").insert([payload]);
+function showReceiptPreview(p){
+  const pkg=p.order_items.map(x=>`<div class="receipt-line"><span>${escapeHtml(x.name)} × ${x.qty}</span><strong>${rupiah(x.subtotal)}</strong></div>`).join("");
+  const addon=p.order_addons.length ? `<div style="margin-top:10px"><strong>Add On</strong>${p.order_addons.map(x=>`<div class="receipt-line"><span>${escapeHtml(x.name)} × ${x.qty}</span><strong>${rupiah(x.subtotal)}</strong></div>`).join("")}</div>` : "";
+  document.getElementById("receipt-content").innerHTML=`
+    <div><strong>Customer:</strong> ${escapeHtml(p.customer_name)}</div>
+    <div><strong>Platform:</strong> ${escapeHtml(p.platform)}</div>
+    <div><strong>Pembayaran:</strong> ${escapeHtml(p.payment_method)}</div>
+    <div style="margin-top:12px"><strong>Package</strong>${pkg}</div>
+    <div style="margin-top:10px"><strong>Topic</strong><div>${p.order_topics.map(x=>escapeHtml(x.name)).join(", ")}</div></div>
+    ${addon}
+    <div class="receipt-total">Total <span style="float:right">${rupiah(p.total_price)}</span></div>`;
+  document.getElementById("receipt-modal").style.display="block";
+}
+function closeReceiptPreview(){ document.getElementById("receipt-modal").style.display="none"; }
+document.getElementById("confirm-save").addEventListener("click",async()=>{
+  if(!pendingTransactionPayload) return;
+  const btn=document.getElementById("confirm-save"); btn.disabled=true; btn.textContent="Menyimpan...";
+  try{
+    const {error}=await db.from("transactions").insert([pendingTransactionPayload]);
     if(error) throw error;
-
-    showToast("✨ Penjualan berhasil disimpan.");
-    resetTxForm();
-    await refreshAll();
-  }catch(err){
-    console.error(err);
-    showToast("Gagal menyimpan: "+err.message,true);
-  }finally{
-    btn.disabled=false;btn.textContent="Simpan Penjualan";
-  }
+    closeReceiptPreview(); pendingTransactionPayload=null; resetTxForm(); showToast("✨ Penjualan berhasil disimpan."); await refreshAll();
+  }catch(err){ showToast("Gagal menyimpan: "+err.message,true); }
+  finally{btn.disabled=false;btn.textContent="✓ Simpan Transaksi";}
 });
 
 /* =========================
@@ -944,8 +1008,12 @@ document.getElementById("payout-form").addEventListener("submit",async e=>{
 function resetTxForm(){
   document.getElementById("tx-form").reset();
   document.getElementById("tx-date").value=todayISO();
+  document.querySelectorAll('.package-check,.topic-check,.addon-check').forEach(c=>c.checked=false);
+  document.querySelectorAll('.package-qty,.addon-qty').forEach(q=>{q.value=1;q.disabled=true;});
   document.getElementById("tx-total").textContent="Rp0";
+  pendingTransactionPayload=null;
 }
+
 
 function escapeHtml(value){
   return String(value??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
@@ -1006,204 +1074,38 @@ function styleTable(ws, range, headerRows=[], totalRows=[]){
 }
 
 function exportExcel(){
-  if(typeof XLSX==="undefined"){
-    showToast("Library Excel belum termuat. Coba refresh halaman.",true);
-    return;
-  }
-
+  if(typeof XLSX==="undefined"){showToast("Library Excel belum termuat. Coba refresh halaman.",true);return;}
   try{
     const wb=XLSX.utils.book_new();
-
-    /* ---------- SHEET 1: TRANSACTION TEMPLATE ---------- */
-    const ws1=XLSX.utils.aoa_to_sheet([]);
-    const headerFill="4B2354";
-    const totalFill="E9C7E8";
-    const headerStyle={
-      font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},
-      fill:{fgColor:{rgb:headerFill}},
-      alignment:{horizontal:"center",vertical:"center"},
-      border:{top:{style:"thin",color:{rgb:"777777"}},bottom:{style:"thin",color:{rgb:"777777"}},left:{style:"thin",color:{rgb:"777777"}},right:{style:"thin",color:{rgb:"777777"}}}
-    };
-    const bodyStyle={
-      font:{name:"Arial",sz:10,color:{rgb:"000000"}},
-      alignment:{vertical:"center"},
-      border:{top:{style:"thin",color:{rgb:"D9D9D9"}},bottom:{style:"thin",color:{rgb:"D9D9D9"}},left:{style:"thin",color:{rgb:"D9D9D9"}},right:{style:"thin",color:{rgb:"D9D9D9"}}}
-    };
-
-    const dataRows=transactions.slice().sort((a,b)=>
-      String(a.transaction_date||"").localeCompare(String(b.transaction_date||"")) ||
-      String(a.created_at||"").localeCompare(String(b.created_at||""))
-    );
-
-    setXCell(ws1,"A1","Tanggal",headerStyle);
-    setXCell(ws1,"B1","Jenis Paket",headerStyle);
-    setXCell(ws1,"C1","Topic",headerStyle);
-    setXCell(ws1,"D1","Add On",headerStyle);
-    setXCell(ws1,"E1","Total Harga",headerStyle);
-
-    dataRows.forEach((t,i)=>{
-      const r=i+2;
-      setXCell(ws1,`A${r}`,excelDate(t.transaction_date),Object.assign({},bodyStyle,{numFmt:"dd/mm/yyyy"}));
-      setXCell(ws1,`B${r}`,t.package_code||"",bodyStyle);
-      setXCell(ws1,`C${r}`,t.topic_name||"",bodyStyle);
-      setXCell(ws1,`D${r}`,t.addon_code||"",bodyStyle);
-      setXCell(ws1,`E${r}`,excelMoney(t.total_price),Object.assign({},bodyStyle,{numFmt:'"Rp"#,##0'}));
-    });
-
-    const totalRow=dataRows.length+2;
-    setXCell(ws1,`D${totalRow}`,"TOTAL",Object.assign({},headerStyle,{fill:{fgColor:{rgb:totalFill}},color:{rgb:"000000"}}));
-    ws1[`E${totalRow}`]={
-      f:`SUM(E2:E${totalRow-1})`,v:dataRows.reduce((s,t)=>s+Number(t.total_price||0),0),t:"n",
-      s:Object.assign({},headerStyle,{fill:{fgColor:{rgb:totalFill}},color:{rgb:"000000"},numFmt:'"Rp"#,##0'})
-    };
-
-    ws1["!ref"]=`A1:E${totalRow}`;
-    ws1["!cols"]=[{wch:15},{wch:22},{wch:28},{wch:22},{wch:18}];
-    ws1["!rows"]=[{hpt:22}];
-    ws1["!freeze"]="A2";
-    ws1["!autofilter"]={ref:`A1:E${Math.max(2,totalRow-1)}`};
-    ws1["!pageSetup"]={orientation:"portrait",fitToWidth:1,fitToHeight:0};
-    ws1["!margins"]={left:0.25,right:0.25,top:0.5,bottom:0.5,header:0.2,footer:0.2};
-    XLSX.utils.book_append_sheet(wb,ws1,"Trine Magic");
-
-    /* ---------- SHEET 2: FULL REPORT ---------- */
-    const ws=XLSX.utils.aoa_to_sheet([]);
-    const purple="4B2354", green="A8D08D", red="FF0000", blue="4A86E8", magenta="FF00FF", lightPink="E9C7E8";
-    const whiteHeader=(fill)=>({
-      font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},
-      fill:{fgColor:{rgb:fill}},
-      alignment:{horizontal:"center",vertical:"center"},
-      border:{top:{style:"thin",color:{rgb:"333333"}},bottom:{style:"thin",color:{rgb:"333333"}},left:{style:"thin",color:{rgb:"333333"}},right:{style:"thin",color:{rgb:"333333"}}}
-    });
-    const cell={font:{name:"Arial",sz:10},alignment:{vertical:"center"},
-      border:{top:{style:"thin",color:{rgb:"BFBFBF"}},bottom:{style:"thin",color:{rgb:"BFBFBF"}},left:{style:"thin",color:{rgb:"BFBFBF"}},right:{style:"thin",color:{rgb:"BFBFBF"}}}};
+    const header={font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"4B2354"}},alignment:{horizontal:"center",vertical:"center"}};
+    const cell={font:{name:"Arial",sz:10},alignment:{vertical:"center"},border:{top:{style:"thin",color:{rgb:"D9D9D9"}},bottom:{style:"thin",color:{rgb:"D9D9D9"}},left:{style:"thin",color:{rgb:"D9D9D9"}},right:{style:"thin",color:{rgb:"D9D9D9"}}}};
     const money=Object.assign({},cell,{numFmt:'"Rp"#,##0'});
-    const pct=Object.assign({},cell,{numFmt:"0%"});
-
-    // Transaction block A1:E...
-    ["Tanggal","Jenis Paket","Harga","Topic","Add On"].forEach((v,i)=>{
-      setXCell(ws,XLSX.utils.encode_cell({r:0,c:i}),v,whiteHeader(purple));
+    const dataRows=transactions.slice().sort((a,b)=>String(a.transaction_date||"").localeCompare(String(b.transaction_date||"")));
+    const rows=[["Tanggal","Nama","Jenis Paket","Qty","Harga","Topic","Add On","Qty","Metode Pembayaran","Total"]];
+    dataRows.forEach(t=>{
+      let pk=Array.isArray(t.order_items)&&t.order_items.length?t.order_items:null;
+      let ad=Array.isArray(t.order_addons)&&t.order_addons.length?t.order_addons:null;
+      if(!pk) pk=[{code:t.package_code||"",qty:Number(t.package_qty||1),unit_price:Number(t.package_price||0),subtotal:Number(t.package_price||0)}];
+      const addonText=ad?ad.map(x=>x.code||x.name||"").join(", "): (t.addon_code||"");
+      const addonQty=ad?ad.reduce((s,x)=>s+Number(x.qty||0),0):Number(t.addon_qty||0);
+      pk.forEach(x=>rows.push([t.transaction_date||"",t.customer_name||"",x.code||x.name||"",Number(x.qty||1),Number(x.unit_price||0),t.topic_name||"",addonText,addonQty,t.payment_method||"",Number(x.subtotal||0)+(pk.length===1?Number(t.addon_price||0):0)]));
     });
-    dataRows.forEach((t,i)=>{
-      const r=i+2;
-      setXCell(ws,`A${r}`,excelDate(t.transaction_date),Object.assign({},cell,{numFmt:"dd/mm/yyyy"}));
-      setXCell(ws,`B${r}`,t.package_code||"",cell);
-      setXCell(ws,`C${r}`,Number(t.package_price||0),money);
-      setXCell(ws,`D${r}`,t.topic_name||"",cell);
-      setXCell(ws,`E${r}`,t.addon_code||"",cell);
-    });
-    const reportTotalRow=dataRows.length+2;
-    setXCell(ws,`E${reportTotalRow}`,"TOTAL",Object.assign({},cell,{fill:{fgColor:{rgb:lightPink}},font:{name:"Arial",sz:10,bold:true}}));
-    ws[`C${reportTotalRow}`]={
-      f:`SUM(C2:C${reportTotalRow-1})`,v:dataRows.reduce((s,t)=>s+Number(t.package_price||0),0),t:"n",
-      s:Object.assign({},money,{fill:{fgColor:{rgb:lightPink}},font:{name:"Arial",sz:10,bold:true}})
-    };
-
-    // Master packages G2:H...
-    setXCell(ws,"G2","Jenis Package",whiteHeader(green));
-    setXCell(ws,"H2","Harga",whiteHeader(green));
-    packages.forEach((x,i)=>{
-      setXCell(ws,`G${i+3}`,x.code||"",cell);
-      setXCell(ws,`H${i+3}`,Number(x.price||0),money);
-    });
-
-    // Master addons G15:H...
-    const addonHeaderRow=Math.max(15,packages.length+5);
-    setXCell(ws,`G${addonHeaderRow}`,"Jenis Add On",whiteHeader(green));
-    setXCell(ws,`H${addonHeaderRow}`,"Harga",whiteHeader(green));
-    addons.forEach((x,i)=>{
-      setXCell(ws,`G${addonHeaderRow+i+1}`,x.code||"",cell);
-      setXCell(ws,`H${addonHeaderRow+i+1}`,Number(x.price||0),money);
-    });
-
-    // Profit share
-    const shareHeaderRow=addonHeaderRow+addons.length+2;
-    ["Nama","Percentage","Total"].forEach((v,i)=>setXCell(ws,XLSX.utils.encode_cell({r:shareHeaderRow-1,c:6+i}),v,whiteHeader(red)));
-    const revenue=dataRows.reduce((s,t)=>s+Number(t.total_price||0),0);
-    partners.forEach((p,i)=>{
-      const r=shareHeaderRow+i+1;
-      setXCell(ws,`G${r}`,p.partner_name||"",cell);
-      setXCell(ws,`H${r}`,Number(p.percentage||0),pct);
-      setXCell(ws,`I${r}`,revenue*Number(p.percentage||0),money);
-    });
-    const shareTotalRow=shareHeaderRow+partners.length+1;
-    setXCell(ws,`G${shareTotalRow}`,"TOTAL",Object.assign({},cell,{font:{name:"Arial",sz:10,bold:true}}));
-    ws[`I${shareTotalRow}`]={
-      f:`SUM(I${shareHeaderRow+1}:I${shareTotalRow-1})`,v:revenue,t:"n",
-      s:Object.assign({},money,{font:{name:"Arial",sz:10,bold:true}})
-    };
-
-    // Shared / payout summary
-    const sharedHeaderRow=shareTotalRow+2;
-    setXCell(ws,`G${sharedHeaderRow}`,"Nama",whiteHeader(blue));
-    setXCell(ws,`H${sharedHeaderRow}`,"SHARED",whiteHeader(blue));
-    const shared={};
-    payouts.forEach(p=>{ const n=p.partner_name||"-"; shared[n]=(shared[n]||0)+Number(p.amount||0); });
-    partners.forEach((p,i)=>{
-      const r=sharedHeaderRow+i+1;
-      setXCell(ws,`G${r}`,p.partner_name||"",cell);
-      setXCell(ws,`H${r}`,shared[p.partner_name]||0,money);
-    });
-    const sharedTotalRow=sharedHeaderRow+partners.length+1;
-    setXCell(ws,`G${sharedTotalRow}`,"TOTAL",Object.assign({},cell,{font:{name:"Arial",sz:10,bold:true}}));
-    ws[`H${sharedTotalRow}`]={
-      f:`SUM(H${sharedHeaderRow+1}:H${sharedTotalRow-1})`,v:payouts.reduce((s,p)=>s+Number(p.amount||0),0),t:"n",
-      s:Object.assign({},money,{font:{name:"Arial",sz:10,bold:true}})
-    };
-
-    // Sisa
-    const sisaRow=sharedTotalRow+2;
-    setXCell(ws,`G${sisaRow}`,"SISA",Object.assign({},whiteHeader(magenta),{font:{name:"Arial",sz:11,bold:true,color:{rgb:"000000"}}}));
-    const sisa=revenue-payouts.reduce((s,p)=>s+Number(p.amount||0),0);
-    setXCell(ws,`H${sisaRow}`,sisa,Object.assign({},money,{fill:{fgColor:{rgb:magenta}},font:{name:"Arial",sz:11,bold:true}}));
-
-    // Sisa distribution
-    const sisaShareHeader=sisaRow+3;
-    ["Nama","Percentage","Total Sisa"].forEach((v,i)=>setXCell(ws,XLSX.utils.encode_cell({r:sisaShareHeader-1,c:7+i}),v,whiteHeader(red)));
-    partners.forEach((p,i)=>{
-      const r=sisaShareHeader+i+1;
-      setXCell(ws,`H${r}`,p.partner_name||"",cell);
-      setXCell(ws,`I${r}`,Number(p.percentage||0),pct);
-      setXCell(ws,`J${r}`,sisa*Number(p.percentage||0),money);
-    });
-    const sisaTotalRow=sisaShareHeader+partners.length+1;
-    setXCell(ws,`I${sisaTotalRow}`,"TOTAL",Object.assign({},cell,{fill:{fgColor:{rgb:magenta}},font:{name:"Arial",sz:10,bold:true}}));
-    ws[`J${sisaTotalRow}`]={
-      f:`SUM(J${sisaShareHeader+1}:J${sisaTotalRow-1})`,v:sisa,t:"n",
-      s:Object.assign({},money,{fill:{fgColor:{rgb:magenta}},font:{name:"Arial",sz:10,bold:true}})
-    };
-
-    ws["!ref"]=`A1:J${sisaTotalRow}`;
-    ws["!cols"]=[{wch:14},{wch:16},{wch:14},{wch:22},{wch:14},{wch:3},{wch:16},{wch:14},{wch:16},{wch:16}];
-    ws["!freeze"]="A2";
-    ws["!pageSetup"]={orientation:"portrait",fitToWidth:1,fitToHeight:0};
-    ws["!margins"]={left:0.25,right:0.25,top:0.5,bottom:0.5,header:0.2,footer:0.2};
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    rows[0].forEach((_,i)=>ws[XLSX.utils.encode_cell({r:0,c:i})].s=header);
+    for(let r=1;r<rows.length;r++){ws[`A${r+1}`].s=cell;ws[`D${r+1}`].s=cell;ws[`E${r+1}`].s=money;ws[`F${r+1}`].s=cell;ws[`G${r+1}`].s=cell;ws[`H${r+1}`].s=cell;ws[`I${r+1}`].s=cell;ws[`J${r+1}`].s=money;}
+    ws["!cols"]=[{wch:13},{wch:22},{wch:24},{wch:8},{wch:15},{wch:28},{wch:24},{wch:8},{wch:18},{wch:16}]; ws["!freeze"]="A2"; ws["!autofilter"]={ref:`A1:J${Math.max(1,rows.length)}`};
     XLSX.utils.book_append_sheet(wb,ws,"Laporan");
 
-    // Add a compact payout detail sheet so the exported report remains auditable.
-    const wp=XLSX.utils.aoa_to_sheet([["Tanggal","Nama","Nominal","Catatan"]]);
-    payouts.slice().sort((a,b)=>String(a.payout_date||"").localeCompare(String(b.payout_date||""))).forEach((p,i)=>{
-      const r=i+2;
-      setXCell(wp,`A${r}`,excelDate(p.payout_date),Object.assign({},cell,{numFmt:"dd/mm/yyyy"}));
-      setXCell(wp,`B${r}`,p.partner_name||"",cell);
-      setXCell(wp,`C${r}`,Number(p.amount||0),money);
-      setXCell(wp,`D${r}`,p.notes||"",cell);
-    });
-    ["A1","B1","C1","D1"].forEach(a=>wp[a].s=whiteHeader(blue));
-    wp["!ref"]=`A1:D${Math.max(1,payouts.length+1)}`;
-    wp["!cols"]=[{wch:14},{wch:18},{wch:16},{wch:30}];
-    wp["!freeze"]="A2";
+    const payoutRows=[["Tanggal","Nama","Nominal","Catatan"]];
+    payouts.slice().sort((a,b)=>String(a.payout_date||"").localeCompare(String(b.payout_date||""))).forEach(p=>payoutRows.push([p.payout_date||"",p.partner_name||"",Number(p.amount||0),p.notes||""]));
+    const wp=XLSX.utils.aoa_to_sheet(payoutRows); payoutRows[0].forEach((_,i)=>wp[XLSX.utils.encode_cell({r:0,c:i})].s=header); wp["!cols"]=[{wch:14},{wch:20},{wch:16},{wch:30}]; wp["!freeze"]="A2";
     XLSX.utils.book_append_sheet(wb,wp,"Pencairan");
 
-    const from=document.getElementById("filter-from").value||"all";
-    const to=document.getElementById("filter-to").value||"all";
-    XLSX.writeFile(wb,`Trine_Magic_Report_${from}_to_${to}.xlsx`);
-    showToast("📊 Excel berhasil dibuat.");
-  }catch(err){
-    console.error(err);
-    showToast("Gagal membuat Excel: "+(err.message||err),true);
-  }
+    const from=document.getElementById("filter-from").value||"all",to=document.getElementById("filter-to").value||"all";
+    XLSX.writeFile(wb,`Trine_Magic_Report_${from}_to_${to}.xlsx`); showToast("📊 Excel berhasil dibuat.");
+  }catch(err){console.error(err);showToast("Gagal membuat Excel: "+(err.message||err),true);}
 }
+
 
 /* =========================
    INIT
