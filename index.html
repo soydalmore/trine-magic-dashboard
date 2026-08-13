@@ -154,7 +154,7 @@ td{padding:10px;border-bottom:1px solid var(--line)}
   .chart-wrap{height:240px}
 }
 
-.master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:calc(100% - 28px);max-height:85vh;overflow:auto;margin:7vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
+.master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:100%;max-height:85vh;overflow:auto;margin:0;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
 @media(max-width:600px){.kpi-grid[style*="repeat(3"]{grid-template-columns:1fr!important}}
 </style>
 </head>
@@ -407,6 +407,18 @@ td{padding:10px;border-bottom:1px solid var(--line)}
         <div class="full actions"><button class="btn btn-pink" type="submit">Catat Pengeluaran Kas</button></div>
       </form>
       <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Tanggal</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody id="cash-expense-table"></tbody></table></div>
+
+      <div class="divider" style="margin:22px 0 16px"></div>
+      <div class="card-title">➕ Pemasukan Kas Bisnis</div>
+      <div class="page-sub" style="margin-bottom:12px">Untuk dana dari luar pendapatan usaha, misalnya dana pribadi atau investor. Tidak dihitung sebagai omzet dan tidak memengaruhi profit sharing.</div>
+      <form id="cash-injection-form" class="form-grid">
+        <div class="form-group"><label class="label">Tanggal</label><input id="cash-injection-date" class="input" type="date" required></div>
+        <div class="form-group"><label class="label">Nominal</label><input id="cash-injection-amount" class="input" type="number" min="1" step="1" required></div>
+        <div class="form-group"><label class="label">Sumber Dana</label><input id="cash-injection-source" class="input" type="text" placeholder="Contoh: Dana pribadi / Investor" required></div>
+        <div class="form-group"><label class="label">Keterangan</label><input id="cash-injection-note" class="input" type="text" placeholder="Opsional"></div>
+        <div class="full actions"><button class="btn btn-green" type="submit">Tambah Pemasukan Kas</button></div>
+      </form>
+      <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Tanggal</th><th>Sumber</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody id="cash-injection-table"></tbody></table></div>
     </div>
   </section>
 
@@ -524,7 +536,8 @@ let partners = [];
 let transactions = [];
 let payouts = [];
 let cashExpenses = [];
-let financialSnapshot = { revenue: 0, payoutTotal: 0, cashEarned: 0, cashSpent: 0, cashBalance: 0, payoutByPartner: {} };
+let cashInjections = [];
+let financialSnapshot = { revenue: 0, payoutTotal: 0, cashEarned: 0, cashInjected: 0, cashSpent: 0, cashBalance: 0, payoutByPartner: {} };
 let dailyChart, packageChart;
 
 const rupiah = n => "Rp" + Number(n || 0).toLocaleString("id-ID");
@@ -590,6 +603,7 @@ function setDefaultDates(){
   document.getElementById("tx-date").value=todayISO();
   document.getElementById("payout-date").value=todayISO();
   document.getElementById("cash-expense-date").value=todayISO();
+  document.getElementById("cash-injection-date").value=todayISO();
   setPeriod("today",false);
 }
 
@@ -745,6 +759,20 @@ async function fetchCashExpenses(){
   }
   cashExpenses=rows;
 }
+async function fetchCashInjections(){
+  const {from,to}=getRange();
+  let q=db.from("cash_injections").select("*").order("injection_date",{ascending:false}).order("created_at",{ascending:false});
+  if(from) q=q.gte("injection_date",from);
+  if(to) q=q.lte("injection_date",to);
+  const PAGE_SIZE=500; let offset=0; const rows=[];
+  while(true){
+    const {data,error}=await q.range(offset,offset+PAGE_SIZE-1);
+    if(error) throw error;
+    const batch=data||[]; rows.push(...batch);
+    if(batch.length<PAGE_SIZE) break; offset+=PAGE_SIZE;
+  }
+  cashInjections=rows;
+}
 
 async function fetchFinancialSnapshot(){
   const {to}=getRange();
@@ -761,18 +789,20 @@ async function fetchFinancialSnapshot(){
   const txAll=await fetchAllSnapshot(()=>{let q=db.from("transactions").select("total_price,transaction_date"); if(to) q=q.lte("transaction_date",to); return q;});
   const poAll=await fetchAllSnapshot(()=>{let q=db.from("payouts").select("partner_id,partner_name,amount,payout_date"); if(to) q=q.lte("payout_date",to); return q;});
   const cashAll=await fetchAllSnapshot(()=>{let q=db.from("cash_expenses").select("amount,expense_date"); if(to) q=q.lte("expense_date",to); return q;});
+  const injectionAll=await fetchAllSnapshot(()=>{let q=db.from("cash_injections").select("amount,injection_date"); if(to) q=q.lte("injection_date",to); return q;});
   const revenue=txAll.reduce((s,t)=>s+Number(t.total_price||0),0);
   const payoutTotal=poAll.reduce((s,p)=>s+Number(p.amount||0),0);
   const cashSpent=cashAll.reduce((s,e)=>s+Number(e.amount||0),0);
+  const cashInjected=injectionAll.reduce((s,e)=>s+Number(e.amount||0),0);
   const cashEarned=revenue*0.05;
   const payoutByPartner={};
   poAll.forEach(p=>{const key=p.partner_id||p.partner_name||"-"; payoutByPartner[key]=(payoutByPartner[key]||0)+Number(p.amount||0);});
-  financialSnapshot={revenue,payoutTotal,payoutByPartner,cashEarned,cashSpent,cashBalance:cashEarned-cashSpent};
+  financialSnapshot={revenue,payoutTotal,payoutByPartner,cashEarned,cashInjected,cashSpent,cashBalance:cashEarned+cashInjected-cashSpent};
 }
 async function refreshAll(){
   try{
     document.getElementById("connection-status").textContent="Memuat...";
-    await Promise.all([fetchTransactions(),fetchPayouts(),fetchCashExpenses(),fetchFinancialSnapshot()]);
+    await Promise.all([fetchTransactions(),fetchPayouts(),fetchCashExpenses(),fetchCashInjections(),fetchFinancialSnapshot()]);
     renderDashboard();
     renderPayouts();
     renderCashExpenses();
@@ -947,6 +977,7 @@ function renderCashExpenses(){
   cashBalanceEl.textContent=rupiah(financialSnapshot.cashBalance);
   cashBalanceEl.style.color=financialSnapshot.cashBalance<0 ? "#c62828" : "";
   document.getElementById("cash-expense-table").innerHTML=cashExpenses.length ? cashExpenses.map(e=>`<tr><td>${escapeHtml(e.expense_date||"-")}</td><td>${escapeHtml(e.description||"-")}</td><td><strong>${rupiah(e.amount)}</strong></td></tr>`).join("") : `<tr><td colspan="3" class="empty">Belum ada pengeluaran kas pada periode ini.</td></tr>`;
+  document.getElementById("cash-injection-table").innerHTML=cashInjections.length ? cashInjections.map(e=>`<tr><td>${escapeHtml(e.injection_date||"-")}</td><td>${escapeHtml(e.source||"-")}</td><td>${escapeHtml(e.description||"-")}</td><td><strong>${rupiah(e.amount)}</strong></td></tr>`).join("") : `<tr><td colspan="4" class="empty">Belum ada pemasukan kas dari luar pendapatan pada periode ini.</td></tr>`;
 }
 
 /* =========================
@@ -1116,14 +1147,16 @@ document.getElementById("cash-expense-form").addEventListener("submit",async e=>
     if(!amount || amount<=0) throw new Error("Nominal pengeluaran harus lebih dari Rp0.");
     if(!expenseDate || !description) throw new Error("Tanggal dan keterangan wajib diisi.");
     // Hard stop: pengeluaran kas tidak boleh melebihi kas 5% yang tersedia sampai tanggal pengeluaran.
-    const [txData,expenseData]=await Promise.all([
+    const [txData,expenseData,injectionData]=await Promise.all([
       fetchAllRows(()=>db.from("transactions").select("total_price").lte("transaction_date",expenseDate)),
-      fetchAllRows(()=>db.from("cash_expenses").select("amount").lte("expense_date",expenseDate))
+      fetchAllRows(()=>db.from("cash_expenses").select("amount").lte("expense_date",expenseDate)),
+      fetchAllRows(()=>db.from("cash_injections").select("amount").lte("injection_date",expenseDate))
     ]);
 
     const cashEarnedToDate=txData.reduce((sum,t)=>sum+Number(t.total_price||0),0)*0.05;
     const cashSpentToDate=expenseData.reduce((sum,x)=>sum+Number(x.amount||0),0);
-    const cashAvailable=Math.max(0,cashEarnedToDate-cashSpentToDate);
+    const cashInjectedToDate=injectionData.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const cashAvailable=Math.max(0,cashEarnedToDate+cashInjectedToDate-cashSpentToDate);
 
     if(cashAvailable <= 0){
       throw new Error(`Saldo kas tersedia saat ini ${rupiah(cashAvailable)}. Pengeluaran kas tidak dapat dicatat sebelum kas tersedia kembali.`);
@@ -1137,6 +1170,35 @@ document.getElementById("cash-expense-form").addEventListener("submit",async e=>
     form.reset(); document.getElementById("cash-expense-date").value=todayISO();
     showToast("🏦 Pengeluaran kas berhasil dicatat."); await refreshAll();
   }catch(err){showToast("Gagal mencatat pengeluaran kas: "+err.message,true);}finally{btn.disabled=false;}
+});
+
+document.getElementById("cash-injection-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const form=e.currentTarget;
+  const btn=form.querySelector('button[type="submit"]');
+  if(btn.disabled) return;
+  btn.disabled=true;
+  const originalText=btn.textContent;
+  btn.textContent="Menyimpan...";
+  try{
+    const amount=Number(document.getElementById("cash-injection-amount").value);
+    const injectionDate=document.getElementById("cash-injection-date").value;
+    const source=document.getElementById("cash-injection-source").value.trim();
+    const description=document.getElementById("cash-injection-note").value.trim() || null;
+    if(!Number.isFinite(amount) || amount<=0) throw new Error("Nominal pemasukan kas harus lebih dari Rp0.");
+    if(!injectionDate || !source) throw new Error("Tanggal dan sumber dana wajib diisi.");
+    const {error}=await db.from("cash_injections").insert([{injection_date:injectionDate,amount,source,description}]);
+    if(error) throw error;
+    form.reset();
+    document.getElementById("cash-injection-date").value=todayISO();
+    showToast("💰 Pemasukan kas berhasil dicatat.");
+    await refreshAll();
+  }catch(err){
+    showToast("Gagal mencatat pemasukan kas: "+err.message,true);
+  }finally{
+    btn.disabled=false;
+    btn.textContent=originalText;
+  }
 });
 
 function resetTxForm(){
@@ -1293,17 +1355,19 @@ function exportExcel(){
     XLSX.utils.book_append_sheet(wb,wp,"Pencairan");
 
     // SHEET 4 — KAS BISNIS
-    const cashRows=[["Tanggal","Keterangan","Nominal"]];
-    cashExpenses.slice().sort((a,b)=>String(a.expense_date||"").localeCompare(String(b.expense_date||""))).forEach(e=>cashRows.push([e.expense_date||"",e.description||"",Number(e.amount||0)]));
+    const cashRows=[["Tanggal","Jenis","Sumber / Keterangan","Nominal"]];
+    cashInjections.slice().sort((a,b)=>String(a.injection_date||"").localeCompare(String(b.injection_date||""))).forEach(e=>cashRows.push([e.injection_date||"","Pemasukan Kas",e.source||e.description||"",Number(e.amount||0)]));
+    cashExpenses.slice().sort((a,b)=>String(a.expense_date||"").localeCompare(String(b.expense_date||""))).forEach(e=>cashRows.push([e.expense_date||"","Pengeluaran Kas",e.description||"",Number(e.amount||0)]));
     cashRows.push([]);
-    cashRows.push(["Kas Terkumpul", "", financialSnapshot.cashEarned]);
-    cashRows.push(["Total Pengeluaran", "", financialSnapshot.cashSpent]);
-    cashRows.push(["Saldo Kas", "", financialSnapshot.cashBalance]);
+    cashRows.push(["Kas dari Omzet", "", "", financialSnapshot.cashEarned]);
+    cashRows.push(["Pemasukan Kas Luar", "", "", financialSnapshot.cashInjected]);
+    cashRows.push(["Total Pengeluaran", "", "", financialSnapshot.cashSpent]);
+    cashRows.push(["Saldo Kas", "", "", financialSnapshot.cashBalance]);
     const wc=XLSX.utils.aoa_to_sheet(cashRows);
     cashRows[0].forEach((_,i)=>wc[XLSX.utils.encode_cell({r:0,c:i})].s=header);
-    for(let r=1;r<cashRows.length;r++){for(let c=0;c<3;c++){const a=XLSX.utils.encode_cell({r,c});if(wc[a])wc[a].s=cell;}}
-    for(let r=1;r<cashRows.length;r++){const a=XLSX.utils.encode_cell({r,c:2}); if(wc[a]&&typeof wc[a].v==="number") wc[a].s=money;}
-    wc["!cols"]=[{wch:14},{wch:36},{wch:18}]; wc["!freeze"]="A2";
+    for(let r=1;r<cashRows.length;r++){for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r,c});if(wc[a])wc[a].s=cell;}}
+    for(let r=1;r<cashRows.length;r++){const a=XLSX.utils.encode_cell({r:r,c:3}); if(wc[a]&&typeof wc[a].v==="number") wc[a].s=money;}
+    wc["!cols"]=[{wch:14},{wch:20},{wch:38},{wch:18}]; wc["!freeze"]="A2";
     XLSX.utils.book_append_sheet(wb,wc,"Kas Bisnis");
 
     const safeFrom=String(range.from||"all").replace(/[^0-9-]/g,"")||"all";
