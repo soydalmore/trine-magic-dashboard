@@ -767,7 +767,7 @@ async function fetchFinancialSnapshot(){
   const cashEarned=revenue*0.05;
   const payoutByPartner={};
   poAll.forEach(p=>{const key=p.partner_id||p.partner_name||"-"; payoutByPartner[key]=(payoutByPartner[key]||0)+Number(p.amount||0);});
-  financialSnapshot={revenue,payoutTotal,payoutByPartner,cashEarned,cashSpent,cashBalance:Math.max(0,cashEarned-cashSpent)};
+  financialSnapshot={revenue,payoutTotal,payoutByPartner,cashEarned,cashSpent,cashBalance:cashEarned-cashSpent};
 }
 async function refreshAll(){
   try{
@@ -943,7 +943,9 @@ function renderPayouts(){
 function renderCashExpenses(){
   document.getElementById("cash-earned").textContent=rupiah(financialSnapshot.cashEarned);
   document.getElementById("cash-spent").textContent=rupiah(financialSnapshot.cashSpent);
-  document.getElementById("cash-balance").textContent=rupiah(financialSnapshot.cashBalance);
+  const cashBalanceEl=document.getElementById("cash-balance");
+  cashBalanceEl.textContent=rupiah(financialSnapshot.cashBalance);
+  cashBalanceEl.style.color=financialSnapshot.cashBalance<0 ? "#c62828" : "";
   document.getElementById("cash-expense-table").innerHTML=cashExpenses.length ? cashExpenses.map(e=>`<tr><td>${escapeHtml(e.expense_date||"-")}</td><td>${escapeHtml(e.description||"-")}</td><td><strong>${rupiah(e.amount)}</strong></td></tr>`).join("") : `<tr><td colspan="3" class="empty">Belum ada pengeluaran kas pada periode ini.</td></tr>`;
 }
 
@@ -1090,6 +1092,18 @@ document.getElementById("payout-form").addEventListener("submit",async e=>{
   }
 });
 
+async function fetchAllRows(makeQuery){
+  const PAGE_SIZE=500; let offset=0; const all=[];
+  while(true){
+    const {data,error}=await makeQuery().range(offset,offset+PAGE_SIZE-1);
+    if(error) throw error;
+    const batch=data||[]; all.push(...batch);
+    if(batch.length<PAGE_SIZE) break;
+    offset+=PAGE_SIZE;
+  }
+  return all;
+}
+
 document.getElementById("cash-expense-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const form=e.currentTarget;
@@ -1101,6 +1115,23 @@ document.getElementById("cash-expense-form").addEventListener("submit",async e=>
     const description=document.getElementById("cash-expense-note").value.trim();
     if(!amount || amount<=0) throw new Error("Nominal pengeluaran harus lebih dari Rp0.");
     if(!expenseDate || !description) throw new Error("Tanggal dan keterangan wajib diisi.");
+    // Hard stop: pengeluaran kas tidak boleh melebihi kas 5% yang tersedia sampai tanggal pengeluaran.
+    const [txData,expenseData]=await Promise.all([
+      fetchAllRows(()=>db.from("transactions").select("total_price").lte("transaction_date",expenseDate)),
+      fetchAllRows(()=>db.from("cash_expenses").select("amount").lte("expense_date",expenseDate))
+    ]);
+
+    const cashEarnedToDate=txData.reduce((sum,t)=>sum+Number(t.total_price||0),0)*0.05;
+    const cashSpentToDate=expenseData.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const cashAvailable=Math.max(0,cashEarnedToDate-cashSpentToDate);
+
+    if(cashAvailable <= 0){
+      throw new Error(`Saldo kas tersedia saat ini ${rupiah(cashAvailable)}. Pengeluaran kas tidak dapat dicatat sebelum kas tersedia kembali.`);
+    }
+    if(amount > cashAvailable + 0.005){
+      throw new Error(`Pengeluaran melebihi saldo kas tersedia ${rupiah(cashAvailable)}. Maksimal yang dapat dicatat: ${rupiah(cashAvailable)}.`);
+    }
+
     const {error}=await db.from("cash_expenses").insert([{expense_date:expenseDate,amount,description}]);
     if(error) throw error;
     form.reset(); document.getElementById("cash-expense-date").value=todayISO();
