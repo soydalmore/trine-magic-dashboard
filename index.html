@@ -705,20 +705,21 @@ async function fetchFinancialSnapshot(){
     return all;
   };
 
-  let tq=db.from("transactions").select("total_price,transaction_date");
-  let pq=db.from("payouts").select("partner_id,partner_name,amount,payout_date");
-  if(to){
-    tq=tq.lte("transaction_date",to);
-    pq=pq.lte("payout_date",to);
-  }
-  const [{data:tx,error:txError},{data:po,error:poError}]=await Promise.all([tq,pq]);
-  if(txError) throw txError;
-  if(poError) throw poError;
+  const txAll = await fetchAllSnapshot(()=>{
+    let q=db.from("transactions").select("total_price,transaction_date");
+    if(to) q=q.lte("transaction_date",to);
+    return q;
+  });
+  const poAll = await fetchAllSnapshot(()=>{
+    let q=db.from("payouts").select("partner_id,partner_name,amount,payout_date");
+    if(to) q=q.lte("payout_date",to);
+    return q;
+  });
 
-  const revenue=(tx||[]).reduce((s,t)=>s+Number(t.total_price||0),0);
-  const payoutTotal=(po||[]).reduce((s,p)=>s+Number(p.amount||0),0);
+  const revenue=txAll.reduce((s,t)=>s+Number(t.total_price||0),0);
+  const payoutTotal=poAll.reduce((s,p)=>s+Number(p.amount||0),0);
   const payoutByPartner={};
-  (po||[]).forEach(p=>{
+  poAll.forEach(p=>{
     const key=p.partner_id || p.partner_name || "-";
     payoutByPartner[key]=(payoutByPartner[key]||0)+Number(p.amount||0);
   });
@@ -1077,32 +1078,88 @@ function exportExcel(){
   if(typeof XLSX==="undefined"){showToast("Library Excel belum termuat. Coba refresh halaman.",true);return;}
   try{
     const wb=XLSX.utils.book_new();
-    const header={font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"4B2354"}},alignment:{horizontal:"center",vertical:"center"}};
-    const cell={font:{name:"Arial",sz:10},alignment:{vertical:"center"},border:{top:{style:"thin",color:{rgb:"D9D9D9"}},bottom:{style:"thin",color:{rgb:"D9D9D9"}},left:{style:"thin",color:{rgb:"D9D9D9"}},right:{style:"thin",color:{rgb:"D9D9D9"}}}};
+    const header={font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"4B2354"}},alignment:{horizontal:"center",vertical:"center",wrap_text:true}};
+    const cell={font:{name:"Arial",sz:10},alignment:{vertical:"center",wrap_text:true},border:{top:{style:"thin",color:{rgb:"D9D9D9"}},bottom:{style:"thin",color:{rgb:"D9D9D9"}},left:{style:"thin",color:{rgb:"D9D9D9"}},right:{style:"thin",color:{rgb:"D9D9D9"}}}};
     const money=Object.assign({},cell,{numFmt:'"Rp"#,##0'});
-    const dataRows=transactions.slice().sort((a,b)=>String(a.transaction_date||"").localeCompare(String(b.transaction_date||"")));
+    const range=getRange();
+    const periodLabel=activePeriod==="today"?"Hari Ini":activePeriod==="7days"?"7 Hari Terakhir":activePeriod==="30days"?"30 Hari Terakhir":"Kustom";
+
+    // SHEET 1 — LAPORAN PENJUALAN
     const rows=[["Tanggal","Nama","Jenis Paket","Qty","Harga","Topic","Add On","Qty","Metode Pembayaran","Total"]];
+    const dataRows=transactions.slice().sort((a,b)=>String(a.transaction_date||"").localeCompare(String(b.transaction_date||"")));
     dataRows.forEach(t=>{
-      let pk=Array.isArray(t.order_items)&&t.order_items.length?t.order_items:null;
-      let ad=Array.isArray(t.order_addons)&&t.order_addons.length?t.order_addons:null;
-      if(!pk) pk=[{code:t.package_code||"",qty:Number(t.package_qty||1),unit_price:Number(t.package_price||0),subtotal:Number(t.package_price||0)}];
-      const addonText=ad?ad.map(x=>x.code||x.name||"").join(", "): (t.addon_code||"");
-      const addonQty=ad?ad.reduce((s,x)=>s+Number(x.qty||0),0):Number(t.addon_qty||0);
-      pk.forEach(x=>rows.push([t.transaction_date||"",t.customer_name||"",x.code||x.name||"",Number(x.qty||1),Number(x.unit_price||0),t.topic_name||"",addonText,addonQty,t.payment_method||"",Number(x.subtotal||0)+(pk.length===1?Number(t.addon_price||0):0)]));
+      const pk=(Array.isArray(t.order_items)&&t.order_items.length?t.order_items:[{
+        code:t.package_code||"",name:t.package_code||"",qty:Number(t.package_qty||1),unit_price:Number(t.package_price||0),subtotal:Number(t.package_price||0)
+      }]);
+      const topics=Array.isArray(t.order_topics)&&t.order_topics.length
+        ? t.order_topics.map(x=>x.name||x.code||"").filter(Boolean).join(", ")
+        : (t.topic_name||"");
+      const ad=Array.isArray(t.order_addons)&&t.order_addons.length?t.order_addons:[];
+      const addonText=ad.length?ad.map(x=>x.name||x.code||"").filter(Boolean).join(", "):(t.addon_code||"");
+      const addonQty=ad.length?ad.reduce((sum,x)=>sum+Number(x.qty||0),0):Number(t.addon_qty||0);
+      pk.forEach((x,i)=>rows.push([
+        t.transaction_date||"",
+        t.customer_name||"",
+        x.name||x.code||"",
+        Number(x.qty||1),
+        Number(x.unit_price||0),
+        i===0?topics:"",
+        i===0?addonText:"",
+        i===0?addonQty:"",
+        i===0?(t.payment_method||""):"",
+        i===0?Number(t.total_price||0):""
+      ]));
     });
     const ws=XLSX.utils.aoa_to_sheet(rows);
     rows[0].forEach((_,i)=>ws[XLSX.utils.encode_cell({r:0,c:i})].s=header);
-    for(let r=1;r<rows.length;r++){ws[`A${r+1}`].s=cell;ws[`D${r+1}`].s=cell;ws[`E${r+1}`].s=money;ws[`F${r+1}`].s=cell;ws[`G${r+1}`].s=cell;ws[`H${r+1}`].s=cell;ws[`I${r+1}`].s=cell;ws[`J${r+1}`].s=money;}
-    ws["!cols"]=[{wch:13},{wch:22},{wch:24},{wch:8},{wch:15},{wch:28},{wch:24},{wch:8},{wch:18},{wch:16}]; ws["!freeze"]="A2"; ws["!autofilter"]={ref:`A1:J${Math.max(1,rows.length)}`};
+    for(let r=1;r<rows.length;r++){
+      for(let c=0;c<10;c++){const a=XLSX.utils.encode_cell({r,c}); if(ws[a]) ws[a].s=cell;}
+      if(ws[`E${r+1}`]) ws[`E${r+1}`].s=money;
+      if(ws[`J${r+1}`]) ws[`J${r+1}`].s=money;
+    }
+    ws["!cols"]=[{wch:13},{wch:22},{wch:28},{wch:8},{wch:15},{wch:30},{wch:28},{wch:8},{wch:20},{wch:16}];
+    ws["!freeze"]="A2";
+    ws["!autofilter"]={ref:`A1:J${Math.max(1,rows.length)}`};
     XLSX.utils.book_append_sheet(wb,ws,"Laporan");
 
+    // SHEET 2 — PROFIT SHARING
+    const revenue=transactions.reduce((sum,t)=>sum+Number(t.total_price||0),0);
+    const psRows=[
+      ["Periode",periodLabel],
+      ["Tanggal",`${range.from} s/d ${range.to}`],
+      [],
+      ["Nama","Persentase","Hak Periode","Pencairan Periode","Sisa Hak Kumulatif"]
+    ];
+    partners.forEach(partner=>{
+      const pct=Number(partner.percentage||0);
+      const periodRight=revenue*pct;
+      const partnerPayoutPeriod=payouts.filter(p=>String(p.partner_id||"")===String(partner.id||"")||(!p.partner_id&&String(p.partner_name||"")===String(partner.partner_name||""))).reduce((s,p)=>s+Number(p.amount||0),0);
+      const paidToDate=Number(financialSnapshot.payoutByPartner?.[partner.id||partner.partner_name]||0);
+      const remaining=Math.max(0,financialSnapshot.revenue*pct-paidToDate);
+      psRows.push([partner.partner_name, pct, periodRight, partnerPayoutPeriod, remaining]);
+    });
+    psRows.push(["TOTAL","",revenue,payouts.reduce((s,p)=>s+Number(p.amount||0),0),""]);
+    const wpShare=XLSX.utils.aoa_to_sheet(psRows);
+    [0,1,3].forEach(r=>{ if(psRows[r]) psRows[r].forEach((_,c)=>{const a=XLSX.utils.encode_cell({r,c});if(wpShare[a])wpShare[a].s=header;});});
+    for(let r=4;r<psRows.length;r++) for(let c=0;c<5;c++){const a=XLSX.utils.encode_cell({r,c});if(wpShare[a])wpShare[a].s=cell;}
+    for(let r=4;r<psRows.length;r++) for(let c=2;c<=4;c++){const a=XLSX.utils.encode_cell({r,c});if(wpShare[a]&&typeof wpShare[a].v==="number")wpShare[a].s=money;}
+    ws["!cols"]=[{wch:22},{wch:14},{wch:18},{wch:20},{wch:22}];
+    wpShare["!cols"]=[{wch:22},{wch:14},{wch:18},{wch:20},{wch:22}];
+    XLSX.utils.book_append_sheet(wb,wpShare,"Profit Sharing");
+
+    // SHEET 3 — PENCAIRAN
     const payoutRows=[["Tanggal","Nama","Nominal","Catatan"]];
     payouts.slice().sort((a,b)=>String(a.payout_date||"").localeCompare(String(b.payout_date||""))).forEach(p=>payoutRows.push([p.payout_date||"",p.partner_name||"",Number(p.amount||0),p.notes||""]));
-    const wp=XLSX.utils.aoa_to_sheet(payoutRows); payoutRows[0].forEach((_,i)=>wp[XLSX.utils.encode_cell({r:0,c:i})].s=header); wp["!cols"]=[{wch:14},{wch:20},{wch:16},{wch:30}]; wp["!freeze"]="A2";
+    const wp=XLSX.utils.aoa_to_sheet(payoutRows);
+    payoutRows[0].forEach((_,i)=>wp[XLSX.utils.encode_cell({r:0,c:i})].s=header);
+    for(let r=1;r<payoutRows.length;r++){for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r,c});if(wp[a])wp[a].s=cell;}if(wp[`C${r+1}`])wp[`C${r+1}`].s=money;}
+    wp["!cols"]=[{wch:14},{wch:20},{wch:16},{wch:30}];wp["!freeze"]="A2";
     XLSX.utils.book_append_sheet(wb,wp,"Pencairan");
 
-    const from=document.getElementById("filter-from").value||"all",to=document.getElementById("filter-to").value||"all";
-    XLSX.writeFile(wb,`Trine_Magic_Report_${from}_to_${to}.xlsx`); showToast("📊 Excel berhasil dibuat.");
+    const safeFrom=String(range.from||"all").replace(/[^0-9-]/g,"")||"all";
+    const safeTo=String(range.to||"all").replace(/[^0-9-]/g,"")||"all";
+    XLSX.writeFile(wb,`Trine_Magic_Report_${safeFrom}_to_${safeTo}.xlsx`);
+    showToast("📊 Excel berhasil dibuat.");
   }catch(err){console.error(err);showToast("Gagal membuat Excel: "+(err.message||err),true);}
 }
 
