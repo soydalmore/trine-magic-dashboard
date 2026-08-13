@@ -157,6 +157,12 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 .master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:100%;max-height:85vh;overflow:auto;margin:0;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
 @media(max-width:600px){.kpi-grid[style*="repeat(3"]{grid-template-columns:1fr!important}}
 </style>
+
+<style>
+@media (max-width: 900px){
+  .kpi-grid[style*="repeat(4,1fr)"]{grid-template-columns:repeat(2,1fr)!important;}
+}
+</style>
 </head>
 
 <body class="auth-locked">
@@ -395,11 +401,14 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 
     <div class="card">
       <div class="card-title">🏦 Kas Bisnis</div>
-      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
-        <div class="kpi"><div class="kpi-label">Kas Terkumpul</div><div class="kpi-value" id="cash-earned">Rp0</div></div>
-        <div class="kpi gold"><div class="kpi-label">Pengeluaran Kas</div><div class="kpi-value" id="cash-spent">Rp0</div></div>
-        <div class="kpi green"><div class="kpi-label">Saldo Kas</div><div class="kpi-value" id="cash-balance">Rp0</div></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+        <div class="kpi"><div class="kpi-label">Kas Terkumpul (5% Omzet)</div><div class="kpi-value" id="cash-earned">Rp0</div></div>
+        <div class="kpi"><div class="kpi-label">Pemasukan Kas Bisnis</div><div class="kpi-value" id="cash-injected-total">Rp0</div></div>
+        <div class="kpi"><div class="kpi-label">Total Kas Bisnis</div><div class="kpi-value" id="cash-total">Rp0</div></div>
+        <div class="kpi green"><div class="kpi-label">Sisa Kas</div><div class="kpi-value" id="cash-balance">Rp0</div></div>
       </div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Komponen Kas</th><th>Nominal</th></tr></thead><tbody id="cash-summary-table"></tbody></table></div>
+      <div class="page-sub" style="margin-bottom:14px">Total Kas Bisnis = kas 5% dari omzet + pemasukan kas eksternal. Pengeluaran kas mengurangi total tersebut.</div>
       <form id="cash-expense-form" class="form-grid">
         <div class="form-group"><label class="label">Tanggal</label><input id="cash-expense-date" class="input" type="date" required></div>
         <div class="form-group"><label class="label">Nominal</label><input id="cash-expense-amount" class="input" type="number" min="1" step="1" required></div>
@@ -972,7 +981,11 @@ function renderPayouts(){
 
 function renderCashExpenses(){
   document.getElementById("cash-earned").textContent=rupiah(financialSnapshot.cashEarned);
+  document.getElementById("cash-injected-total").textContent=rupiah(financialSnapshot.cashInjected);
+  const totalCash=financialSnapshot.cashEarned+financialSnapshot.cashInjected;
+  document.getElementById("cash-total").textContent=rupiah(totalCash);
   document.getElementById("cash-spent").textContent=rupiah(financialSnapshot.cashSpent);
+  document.getElementById("cash-summary-table").innerHTML=`<tr><td>Kas dari omzet (5%)</td><td><strong>${rupiah(financialSnapshot.cashEarned)}</strong></td></tr><tr><td>Pemasukan kas bisnis</td><td><strong>${rupiah(financialSnapshot.cashInjected)}</strong></td></tr><tr><td><strong>Total Kas Bisnis</strong></td><td><strong>${rupiah(totalCash)}</strong></td></tr><tr><td>Pengeluaran Kas</td><td><strong>${rupiah(financialSnapshot.cashSpent)}</strong></td></tr><tr><td><strong>Sisa Kas</strong></td><td><strong>${rupiah(financialSnapshot.cashBalance)}</strong></td></tr>`;
   const cashBalanceEl=document.getElementById("cash-balance");
   cashBalanceEl.textContent=rupiah(financialSnapshot.cashBalance);
   cashBalanceEl.style.color=financialSnapshot.cashBalance<0 ? "#c62828" : "";
