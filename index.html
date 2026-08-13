@@ -1092,7 +1092,8 @@ document.getElementById("payout-form").addEventListener("submit",async e=>{
 
 document.getElementById("cash-expense-form").addEventListener("submit",async e=>{
   e.preventDefault();
-  const btn=e.currentTarget.querySelector('button[type="submit"]');
+  const form=e.currentTarget;
+  const btn=form.querySelector('button[type="submit"]');
   btn.disabled=true;
   try{
     const amount=Number(document.getElementById("cash-expense-amount").value);
@@ -1102,7 +1103,7 @@ document.getElementById("cash-expense-form").addEventListener("submit",async e=>
     if(!expenseDate || !description) throw new Error("Tanggal dan keterangan wajib diisi.");
     const {error}=await db.from("cash_expenses").insert([{expense_date:expenseDate,amount,description}]);
     if(error) throw error;
-    e.currentTarget.reset(); document.getElementById("cash-expense-date").value=todayISO();
+    form.reset(); document.getElementById("cash-expense-date").value=todayISO();
     showToast("🏦 Pengeluaran kas berhasil dicatat."); await refreshAll();
   }catch(err){showToast("Gagal mencatat pengeluaran kas: "+err.message,true);}finally{btn.disabled=false;}
 });
