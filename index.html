@@ -157,6 +157,8 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 .master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:100%;max-height:85vh;overflow:auto;margin:0;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
 @media(max-width:600px){.kpi-grid[style*="repeat(3"]{grid-template-columns:1fr!important}}
 
+/* V15.1: logout confirmation interaction fix */
+#logout-modal{align-items:center;justify-content:center;}
 /* V15: lightweight logout confirmation + perceived logout loading */
 .logout-confirm-card{width:min(380px,calc(100vw - 32px));text-align:center;padding:24px 20px;}
 .logout-confirm-title{font-size:17px;font-weight:800;color:var(--ink);margin-bottom:8px;}
@@ -536,6 +538,17 @@ function showLogoutConfirmation(){
   const modal=document.getElementById("logout-modal");
   if(!modal) return;
   modal.style.display="block";
+  const confirm=document.getElementById("logout-confirm-button");
+  const cancel=document.getElementById("logout-cancel-button");
+  if(confirm){confirm.disabled=false;confirm.textContent="Yoi nih";}
+  if(cancel){cancel.disabled=false;}
+}
+
+function openLogoutConfirmation(){
+  if(logoutBusy) return;
+  const modal=document.getElementById("logout-modal");
+  if(!modal) return;
+  modal.style.display="flex";
   const confirm=document.getElementById("logout-confirm-button");
   const cancel=document.getElementById("logout-cancel-button");
   if(confirm){confirm.disabled=false;confirm.textContent="Yoi nih";}
@@ -1515,6 +1528,11 @@ document.querySelectorAll(".period-btn").forEach(btn=>{
     setPeriod(btn.dataset.period,btn.dataset.period!=="custom");
   });
 });
+
+const logoutButton=document.getElementById("logout-button");
+if(logoutButton){
+  logoutButton.addEventListener("click",openLogoutConfirmation);
+}
 
 document.getElementById("filter-from").addEventListener("change",()=>{
   activePeriod="custom";
