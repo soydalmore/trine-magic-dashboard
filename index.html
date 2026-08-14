@@ -156,6 +156,19 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 
 .master-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:6px}.master-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}.master-item .master-main{flex:1}.master-item small{display:block;color:var(--muted);margin-top:2px}.qty-input{width:76px}.modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}.modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.modal-card{position:relative;z-index:1;max-width:560px;width:100%;max-height:85vh;overflow:auto;margin:0;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed #ddd}.receipt-total{font-size:18px;font-weight:800;margin-top:10px}
 @media(max-width:600px){.kpi-grid[style*="repeat(3"]{grid-template-columns:1fr!important}}
+
+/* V15: lightweight logout confirmation + perceived logout loading */
+.logout-confirm-card{width:min(380px,calc(100vw - 32px));text-align:center;padding:24px 20px;}
+.logout-confirm-title{font-size:17px;font-weight:800;color:var(--ink);margin-bottom:8px;}
+.logout-confirm-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.logout-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.logout-confirm-actions .btn{width:100%;}
+.logout-busy-overlay{position:fixed;inset:0;background:rgba(250,248,245,.78);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:10001;}
+.logout-busy-overlay.show{display:flex;}
+.logout-busy-card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;color:var(--green);}
+.logout-spinner{width:16px;height:16px;border:2px solid #e8e3df;border-top-color:var(--green);border-radius:50%;animation:logoutSpin .7s linear infinite;}
+@keyframes logoutSpin{to{transform:rotate(360deg)}}
+@media(max-width:520px){.logout-confirm-actions{grid-template-columns:1fr;}.logout-confirm-card{padding:22px 16px;}}
 </style>
 
 <style>
@@ -444,6 +457,22 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 </main>
 </div>
 
+
+<div id="logout-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeLogoutConfirmation()"></div>
+  <div class="modal-card logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+    <div class="logout-confirm-title" id="logout-confirm-title">Yakin banget mau keluar?</div>
+    <div class="logout-confirm-sub">Sesi akun kamu akan ditutup dan kamu akan kembali ke halaman login.</div>
+    <div class="logout-confirm-actions">
+      <button class="btn btn-light" id="logout-cancel-button" type="button" onclick="closeLogoutConfirmation()">Eh gak jadi deh</button>
+      <button class="btn btn-pink" id="logout-confirm-button" type="button" onclick="confirmLogout()">Yoi nih</button>
+    </div>
+  </div>
+</div>
+<div id="logout-busy-overlay" class="logout-busy-overlay" aria-hidden="true">
+  <div class="logout-busy-card"><span class="logout-spinner"></span><span>Keluar...</span></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -455,6 +484,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_cylO3B4mLWoohXAWlI0R1A_uanf1qYM";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let dashboardInitialized = false;
 let authBusy = false;
+let refreshInFlight = null;
+let logoutBusy = false;
 let maskedNominals = localStorage.getItem("trine_magic_masked_nominals") === "1";
 const lastKpiValues = {"kpi-revenue":0,"kpi-cash":0,"kpi-rights":0};
 
@@ -500,20 +531,55 @@ async function loginWithUsername(username,password){
   if(error) showAuthError("Username atau password salah.");
 }
 
-async function logoutDashboard(){
-  const {error}=await db.auth.signOut();
-  if(error){
-    showToast(error.message,true);
-    return;
-  }
+function showLogoutConfirmation(){
+  if(logoutBusy) return;
+  const modal=document.getElementById("logout-modal");
+  if(!modal) return;
+  modal.style.display="block";
+  const confirm=document.getElementById("logout-confirm-button");
+  const cancel=document.getElementById("logout-cancel-button");
+  if(confirm){confirm.disabled=false;confirm.textContent="Yoi nih";}
+  if(cancel){cancel.disabled=false;}
+}
 
-  // Bersihkan kredensial dari form login segera setelah logout.
-  const usernameInput=document.getElementById("login-username");
-  const passwordInput=document.getElementById("login-password");
-  if(usernameInput) usernameInput.value="";
-  if(passwordInput) passwordInput.value="";
-  clearAuthError();
-  if(document.activeElement) document.activeElement.blur();
+function closeLogoutConfirmation(){
+  if(logoutBusy) return;
+  const modal=document.getElementById("logout-modal");
+  if(modal) modal.style.display="none";
+}
+
+async function confirmLogout(){
+  if(logoutBusy) return;
+  logoutBusy=true;
+  const confirm=document.getElementById("logout-confirm-button");
+  const cancel=document.getElementById("logout-cancel-button");
+  if(confirm){confirm.disabled=true;confirm.textContent="Keluar...";}
+  if(cancel) cancel.disabled=true;
+
+  // Give immediate visual feedback so a slow network never looks like a dead button.
+  const modal=document.getElementById("logout-modal");
+  if(modal) modal.style.display="none";
+  const overlay=document.getElementById("logout-busy-overlay");
+  if(overlay){overlay.classList.add("show");overlay.setAttribute("aria-hidden","false");}
+
+  try{
+    const {error}=await db.auth.signOut();
+    if(error) throw error;
+
+    const usernameInput=document.getElementById("login-username");
+    const passwordInput=document.getElementById("login-password");
+    if(usernameInput) usernameInput.value="";
+    if(passwordInput) passwordInput.value="";
+    clearAuthError();
+    if(document.activeElement) document.activeElement.blur();
+  }catch(error){
+    console.error(error);
+    if(overlay){overlay.classList.remove("show");overlay.setAttribute("aria-hidden","true");}
+    showToast(error.message || "Gagal keluar dari akun.",true);
+  }finally{
+    logoutBusy=false;
+    if(overlay){overlay.classList.remove("show");overlay.setAttribute("aria-hidden","true");}
+  }
 }
 
 async function handleAuthSession(session){
@@ -804,10 +870,13 @@ async function fetchFinancialSnapshot(){
     }
     return all;
   };
-  const txAll=await fetchAllSnapshot(()=>{let q=db.from("transactions").select("total_price,transaction_date"); if(to) q=q.lte("transaction_date",to); return q;});
-  const poAll=await fetchAllSnapshot(()=>{let q=db.from("payouts").select("partner_id,partner_name,amount,payout_date"); if(to) q=q.lte("payout_date",to); return q;});
-  const cashAll=await fetchAllSnapshot(()=>{let q=db.from("cash_expenses").select("amount,expense_date"); if(to) q=q.lte("expense_date",to); return q;});
-  const injectionAll=await fetchAllSnapshot(()=>{let q=db.from("cash_injections").select("amount,injection_date"); if(to) q=q.lte("injection_date",to); return q;});
+  // These four snapshots are independent; fetch them concurrently to reduce mobile latency.
+  const [txAll,poAll,cashAll,injectionAll]=await Promise.all([
+    fetchAllSnapshot(()=>{let q=db.from("transactions").select("total_price,transaction_date"); if(to) q=q.lte("transaction_date",to); return q;}),
+    fetchAllSnapshot(()=>{let q=db.from("payouts").select("partner_id,partner_name,amount,payout_date"); if(to) q=q.lte("payout_date",to); return q;}),
+    fetchAllSnapshot(()=>{let q=db.from("cash_expenses").select("amount,expense_date"); if(to) q=q.lte("expense_date",to); return q;}),
+    fetchAllSnapshot(()=>{let q=db.from("cash_injections").select("amount,injection_date"); if(to) q=q.lte("injection_date",to); return q;})
+  ]);
   const revenue=txAll.reduce((s,t)=>s+Number(t.total_price||0),0);
   const payoutTotal=poAll.reduce((s,p)=>s+Number(p.amount||0),0);
   const cashSpent=cashAll.reduce((s,e)=>s+Number(e.amount||0),0);
@@ -818,18 +887,25 @@ async function fetchFinancialSnapshot(){
   financialSnapshot={revenue,payoutTotal,payoutByPartner,cashEarned,cashInjected,cashSpent,cashBalance:cashEarned+cashInjected-cashSpent};
 }
 async function refreshAll(){
-  try{
-    document.getElementById("connection-status").textContent="Memuat...";
-    await Promise.all([fetchTransactions(),fetchPayouts(),fetchCashExpenses(),fetchCashInjections(),fetchFinancialSnapshot()]);
-    renderDashboard();
-    renderPayouts();
-    renderCashExpenses();
-    document.getElementById("connection-status").textContent="● Database terhubung";
-  }catch(e){
-    console.error(e);
-    document.getElementById("connection-status").textContent="Database error";
-    showToast(e.message || "Gagal mengambil data",true);
-  }
+  if(refreshInFlight) return refreshInFlight;
+  refreshInFlight=(async()=>{
+    try{
+      document.getElementById("connection-status").textContent="Memuat...";
+      // Current-period data and the cumulative financial snapshot are independent.
+      await Promise.all([fetchTransactions(),fetchPayouts(),fetchCashExpenses(),fetchCashInjections(),fetchFinancialSnapshot()]);
+      renderDashboard();
+      renderPayouts();
+      renderCashExpenses();
+      document.getElementById("connection-status").textContent="● Database terhubung";
+    }catch(e){
+      console.error(e);
+      document.getElementById("connection-status").textContent="Database error";
+      showToast(e.message || "Gagal mengambil data",true);
+    }finally{
+      refreshInFlight=null;
+    }
+  })();
+  return refreshInFlight;
 }
 
 /* =========================
@@ -1465,8 +1541,8 @@ document.getElementById("login-form").addEventListener("submit",async (e)=>{
   await loginWithUsername(username,password);
 });
 
-document.getElementById("logout-button").addEventListener("click",logoutDashboard);
 document.querySelectorAll(".kpi-eye").forEach(btn=>btn.addEventListener("click",toggleKpiVisibility));
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!logoutBusy) closeLogoutConfirmation();});
 updateKpiEyeButtons();
 
 db.auth.onAuthStateChange((event,session)=>{
