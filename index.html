@@ -927,8 +927,10 @@ async function refreshAll(){
 }
 
 /* =========================
-   REALTIME SYNC
+   REALTIME SYNC + FALLBACK POLLING
    ========================= */
+let realtimeRetryTimer=null;
+let livePollTimer=null;
 function scheduleRealtimeRefresh(){
   clearTimeout(realtimeRefreshTimer);
   realtimeRefreshTimer=setTimeout(()=>{
@@ -937,16 +939,28 @@ function scheduleRealtimeRefresh(){
     refreshAll();
   },350);
 }
-
 function stopRealtimeSync(){
   clearTimeout(realtimeRefreshTimer);
-  realtimeRefreshTimer=null;
+  clearTimeout(realtimeRetryTimer);
+  clearInterval(livePollTimer);
+  realtimeRefreshTimer=null; realtimeRetryTimer=null; livePollTimer=null;
   if(realtimeChannel){
     try{ db.removeChannel(realtimeChannel); }catch(e){ console.warn("Realtime cleanup:",e); }
     realtimeChannel=null;
   }
 }
-
+function scheduleRealtimeRetry(){
+  clearTimeout(realtimeRetryTimer);
+  if(!dashboardInitialized || document.body.classList.contains("auth-locked")) return;
+  realtimeRetryTimer=setTimeout(()=>{ realtimeRetryTimer=null; startRealtimeSync(); },3000);
+}
+function startLiveFallbackPolling(){
+  clearInterval(livePollTimer);
+  livePollTimer=setInterval(()=>{
+    if(document.hidden || !dashboardInitialized || document.body.classList.contains("auth-locked")) return;
+    scheduleRealtimeRefresh();
+  },15000);
+}
 function startRealtimeSync(){
   if(realtimeChannel) return;
   realtimeChannel=db.channel("trine-magic-live-dashboard")
@@ -955,10 +969,17 @@ function startRealtimeSync(){
     .on("postgres_changes",{event:"*",schema:"public",table:"cash_expenses"},scheduleRealtimeRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"cash_injections"},scheduleRealtimeRefresh)
     .subscribe((status)=>{
-      if(status==="CHANNEL_ERROR" || status==="TIMED_OUT"){
+      const statusEl=document.getElementById("connection-status");
+      if(status==="SUBSCRIBED"){
+        if(statusEl) statusEl.textContent="Live";
+      }else if(status==="CHANNEL_ERROR" || status==="TIMED_OUT" || status==="CLOSED"){
         console.warn("Supabase Realtime status:",status);
+        if(statusEl) statusEl.textContent="Sinkronisasi...";
+        if(realtimeChannel){ try{ db.removeChannel(realtimeChannel); }catch(e){} realtimeChannel=null; }
+        scheduleRealtimeRetry();
       }
     });
+  startLiveFallbackPolling();
 }
 
 /* =========================
@@ -1208,14 +1229,28 @@ function showReceiptPreview(p){
     ${adjustment}
     <div class="receipt-total">Total <span style="float:right">${rupiah(p.total_price)}</span></div>`;
   const receiptModal=document.getElementById("receipt-modal");
-  receiptModal.style.display="flex";
-  document.body.dataset.receiptScrollY=String(window.scrollY);
+  if(receiptModal.parentElement!==document.body) document.body.appendChild(receiptModal);
+  const scrollY=window.scrollY || window.pageYOffset || 0;
+  document.body.dataset.receiptScrollY=String(scrollY);
+  document.body.style.position="fixed";
+  document.body.style.top=`-${scrollY}px`;
+  document.body.style.left="0";
+  document.body.style.right="0";
+  document.body.style.width="100%";
   document.body.style.overflow="hidden";
+  receiptModal.style.display="flex";
 }
 function closeReceiptPreview(){
   const receiptModal=document.getElementById("receipt-modal");
   receiptModal.style.display="none";
+  const scrollY=parseInt(document.body.dataset.receiptScrollY||"0",10);
+  document.body.style.position="";
+  document.body.style.top="";
+  document.body.style.left="";
+  document.body.style.right="";
+  document.body.style.width="";
   document.body.style.overflow="";
+  window.scrollTo(0,scrollY);
 }
 document.getElementById("confirm-save").addEventListener("click",async()=>{
   if(!pendingTransactionPayload) return;
