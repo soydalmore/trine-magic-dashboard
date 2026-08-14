@@ -933,9 +933,18 @@ function renderCharts(){
     daily[d]=(daily[d]||0)+Number(t.total_price||0);
   });
 
+  // Rekap paket berdasarkan TOTAL QTY yang dibeli, bukan jumlah customer/transaksi.
+  // order_items adalah sumber utama karena setiap item menyimpan qty masing-masing.
   const pkg={};
   transactions.forEach(t=>{
-    pkg[t.package_code]=(pkg[t.package_code]||0)+1;
+    const items=Array.isArray(t.order_items)&&t.order_items.length
+      ? t.order_items
+      : [{name:t.package_code||"-",qty:Number(t.package_qty||1)}];
+    items.forEach(x=>{
+      const name=x.name||x.code||"-";
+      const qty=Number(x.qty||1);
+      pkg[name]=(pkg[name]||0)+(Number.isFinite(qty)&&qty>0?qty:0);
+    });
   });
 
   if(dailyChart) dailyChart.destroy();
@@ -959,10 +968,14 @@ function renderCharts(){
     type:"doughnut",
     data:{labels:pkgEntries.map(x=>x[0]),datasets:[{
       data:pkgEntries.map(x=>x[1]),
+      label:"Qty Terjual",
       backgroundColor:["#EA97A9","#696F41","#F4D27A","#D8A0AF","#89905C","#E9C978","#B9788A","#7B8054","#F1B8C5"],
       borderWidth:2,borderColor:"#fff"
     }]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:12,font:{size:10}}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{
+      legend:{position:"bottom",labels:{boxWidth:12,font:{size:10}}},
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed}x terjual`}}
+    }}
   });
 }
 
