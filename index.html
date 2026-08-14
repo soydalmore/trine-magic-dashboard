@@ -159,6 +159,7 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 
 /* V15.1: logout confirmation interaction fix */
 #logout-modal{align-items:center;justify-content:center;}
+#receipt-modal{align-items:center;justify-content:center;}
 /* V15: lightweight logout confirmation + perceived logout loading */
 .logout-confirm-card{width:min(380px,calc(100vw - 32px));text-align:center;padding:24px 20px;}
 .logout-confirm-title{font-size:17px;font-weight:800;color:var(--ink);margin-bottom:8px;}
@@ -488,6 +489,8 @@ let dashboardInitialized = false;
 let authBusy = false;
 let refreshInFlight = null;
 let logoutBusy = false;
+let realtimeChannel = null;
+let realtimeRefreshTimer = null;
 let maskedNominals = localStorage.getItem("trine_magic_masked_nominals") === "1";
 const lastKpiValues = {"kpi-revenue":0,"kpi-cash":0,"kpi-rights":0};
 
@@ -596,6 +599,7 @@ async function confirmLogout(){
 }
 
 async function handleAuthSession(session){
+  if(!session){ stopRealtimeSync(); }
   if(session?.user){
     document.body.classList.remove("auth-locked");
     document.body.classList.add("authenticated");
@@ -603,6 +607,7 @@ async function handleAuthSession(session){
     document.getElementById("connection-status").textContent="Terhubung";
     if(!dashboardInitialized){
       dashboardInitialized=true;
+  startRealtimeSync();
       const shell=document.getElementById("app-shell");
       shell.classList.remove("dashboard-enter");
       void shell.offsetWidth;
@@ -922,6 +927,41 @@ async function refreshAll(){
 }
 
 /* =========================
+   REALTIME SYNC
+   ========================= */
+function scheduleRealtimeRefresh(){
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer=setTimeout(()=>{
+    realtimeRefreshTimer=null;
+    if(!dashboardInitialized || document.body.classList.contains("auth-locked")) return;
+    refreshAll();
+  },350);
+}
+
+function stopRealtimeSync(){
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer=null;
+  if(realtimeChannel){
+    try{ db.removeChannel(realtimeChannel); }catch(e){ console.warn("Realtime cleanup:",e); }
+    realtimeChannel=null;
+  }
+}
+
+function startRealtimeSync(){
+  if(realtimeChannel) return;
+  realtimeChannel=db.channel("trine-magic-live-dashboard")
+    .on("postgres_changes",{event:"*",schema:"public",table:"transactions"},scheduleRealtimeRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"payouts"},scheduleRealtimeRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"cash_expenses"},scheduleRealtimeRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"cash_injections"},scheduleRealtimeRefresh)
+    .subscribe((status)=>{
+      if(status==="CHANNEL_ERROR" || status==="TIMED_OUT"){
+        console.warn("Supabase Realtime status:",status);
+      }
+    });
+}
+
+/* =========================
    CALCULATIONS
    ========================= */
 function getPriceAdjustment(baseTotal){
@@ -1167,9 +1207,16 @@ function showReceiptPreview(p){
     <div class="receipt-line" style="margin-top:10px"><span>Subtotal</span><strong>${rupiah(p.order_items.reduce((s,x)=>s+x.subtotal,0)+p.order_addons.reduce((s,x)=>s+x.subtotal,0))}</strong></div>
     ${adjustment}
     <div class="receipt-total">Total <span style="float:right">${rupiah(p.total_price)}</span></div>`;
-  document.getElementById("receipt-modal").style.display="block";
+  const receiptModal=document.getElementById("receipt-modal");
+  receiptModal.style.display="flex";
+  document.body.dataset.receiptScrollY=String(window.scrollY);
+  document.body.style.overflow="hidden";
 }
-function closeReceiptPreview(){ document.getElementById("receipt-modal").style.display="none"; }
+function closeReceiptPreview(){
+  const receiptModal=document.getElementById("receipt-modal");
+  receiptModal.style.display="none";
+  document.body.style.overflow="";
+}
 document.getElementById("confirm-save").addEventListener("click",async()=>{
   if(!pendingTransactionPayload) return;
   const btn=document.getElementById("confirm-save"); btn.disabled=true; btn.textContent="Menyimpan...";
